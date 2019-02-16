@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-cmn-Hans">
+<head>
+  <meta charset="UTF-8">
+  <title>MVVM</title>
+</head>
+<body>
+
+  <div id="mvvm-app">
+    <div>
+      showSpan: {{showSpan}} -- someStr: {{someStr}}
+      <p>
+        <span>child.child_someStr: {{child.child_someStr}}</span>
+      </p>
+      <p>
+        <span :data-id="someStr + '::'" :class="someStr" @click="test1" style="cursor: pointer;">string edit</span>
+      </p>
+      <p>
+          <span :data-id="someStr + '::'" :class="someStr" @click="test2" style="cursor: pointer;">bool edit</span>
+        </p>
+      <span v-if="showSpan">showSpan: {{showSpan}} someStr: {{someStr}}</span>
+      <p v-for="(item, key) in arr">{{item.name}}-{{someStr}}</p>
+    </div>
+  </div>
+
+  <script src="./Vm.js"></script>
+  <script>
+    var vm = new Vm({
+      el: '#mvvm-app',
+      data: {
+        showSpan: false,
+        someStr: 0,
+        arr: [
+          {
+            name: 'test1'
+          },
+          {
+            name: 'test2'
+          }
+        ],
+        child: {
+          child_someStr: 'child_someStr-test'
+        }
+      },
+      methods: {
+        test1() {
+          // 测试 DOM 事件清除 不清除 内存变化
+          for (let i = 0; i < 100; i++) {
+            this.someStr += 1
+
+            let bool = this.showSpan
+            this.showSpan = !bool
+            this.showSpan = !bool
+          }
+        },
+        test2() {
+          let bool = this.showSpan
+          this.showSpan = !bool
+        }
+      }
+    });
+  </script>
+
+</body>
+</html>
