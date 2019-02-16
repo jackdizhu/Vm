@@ -2,7 +2,7 @@
 <html lang="zh-cmn-Hans">
 <head>
   <meta charset="UTF-8">
-  <title>MVVM</title>
+  <title>VM</title>
 </head>
 <body>
 
@@ -45,7 +45,7 @@
       methods: {
         test1() {
           // 测试 DOM 事件清除 不清除 内存变化
-          for (let i = 0; i < 100; i++) {
+          for (let i = 0; i < 1000; i++) {
             this.someStr += 1
 
             let bool = this.showSpan

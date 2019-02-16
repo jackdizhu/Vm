@@ -1,16 +1,26 @@
-// 已经处理 -- 待解决问题 v-if DOM 中有 click 等事件 删除DOM时 没有清除事件
+// 已经处理 --  v-if DOM 中有 click 等事件 删除DOM时 没有清除事件
+// 已经处理 -- 循环修改属性 10000+ 次内存快速上升问题
+// 待解决问题 v-for DOM 节点替换后 原来子元素的编译还会继续进行 导致报错问题
 // 模板渲染使用了 eval 方法
-;(function (global, factory) {
+;
+(function (global, factory) {
   typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
-  typeof define === 'function' && define.amd ? define(factory) :
-  (global = global || self, global.Vm = factory());
-}(this, function () { 'use strict';
+    typeof define === 'function' && define.amd ? define(factory) :
+    (global = global || self, global.Vm = factory());
+}(this, function () {
+  'use strict';
   // 调试变量
   let dev = false
-  function log (...arr) {
+
+  function log(...arr) {
     dev && console.log.apply(this, arr)
   }
-  function dir (...arr) {
+
+  function err(...arr) {
+    dev && console.error.apply(this, arr)
+  }
+
+  function dir(...arr) {
     dev && console.dir.apply(this, arr)
   }
   // 渲染事件队列
@@ -21,38 +31,48 @@
   let fnNames = {}
   let clearEvents = []
   // 记录 element 事件
-  function pushClearEvents (element, eventType, fn) {
+  function pushClearEvents(element, eventType, fnStr) {
     clearEvents.push({
       element,
       eventType,
-      fn
+      fnStr
     })
   }
   // 清除 element 事件
-  function initClearEvents () {
+  function initClearEvents() {
     while (clearEvents.length) {
       let obj = clearEvents.shift()
-      obj.element.removeEventListener(obj.eventType, obj.fn, false)
+      obj.element.removeEventListener(obj.eventType, fnNames[obj.fnStr], false)
+      // 清空保存的方法 优化内存
+      // fnNames[obj.fnStr] = null
+      delete fnNames[obj.fnStr]
     }
   }
   // 开始执行渲染事件队列
-  function initQueue () {
-    while (!isStartQueue && Queue.length) {
+  function initQueue() {
+    // while 事件队列优化 改为 递归
+    if (!isStartQueue && Queue.length) {
       isStartQueue = true
       let obj = Queue.shift()
-      log(obj.param, Queue.length);
       obj.fn.apply(obj._this, obj.param)
       // 最后重置 isStartQueue 状态
       setTimeout(() => {
         isStartQueue = false
-      },0)
+        initQueue()
+      }, 0)
+    } else {
+      log({
+        Queue,
+        fnNames,
+        clearEvents
+      }, Queue.length);
     }
   }
   // 加入渲染事件队列 开始执行
-  function pushQueue (el, _this) {
+  function pushQueue(el, _this) {
     Queue.push({
       fn: (el, _this) => {
-        Compile (el, _this)
+        Compile(el, _this)
       },
       param: [el, _this],
       _this: _this
@@ -61,11 +81,46 @@
     initQueue()
   }
   // 编译模板
-  function Compile (el, _this) {
+  function Compile(el, _this) {
     // 实际DOM移到虚拟DOM
     function node2Fragment(el, _this) {
+      // 实现 模板字符串功能 解决内存消耗太大问题
+      function evalFn(text, $data, fnName) {
+        // 删除 ` 字符串
+        text = text.replace(/`/g, '')
+        // 递归替换
+        function replaceItem(text, $data) {
+          let _text = text
+          if (/\${([^{}]+)}/g.test(_text) && $data) {
+            let str = RegExp.$1
+            let arr = str.split('.')
+            let item = $data
+            for (let i = 1; i < arr.length; i++) {
+              item = item[arr[i]];
+              // 错误提示
+              if (item === void(0)) {
+                err($data, `Fn:replaceItem::text:${text}>>str:${str}>>arr[i]:${arr[i]}`);
+                break;
+              }
+            }
+            _text = _text.replace('${' + str + '}', item)
+            // 递归
+            _text = replaceItem(_text, $data, 'evalFn')
+          }
+          return _text
+        }
+        let textContent = ''
+        // try {
+        //   textContent = eval(text)
+        // } catch (error) {
+        //   textContent = JSON.stringify($data, null, 2) + '--' + text
+        // }
+        textContent = replaceItem(text, $data)
+
+        return textContent
+      }
       // 渲染DOM属性 事件
-      function tplBindAttr (el, _data, _this) {
+      function tplBindAttr(el, _data, _this) {
         var attrs = el.attributes
         for (let i = 0; i < attrs.length; i++) {
           const attrName = attrs[i]
@@ -93,11 +148,17 @@
         }
       }
       // 处理v-for指令
-      function getVForTplData (element, attr, text, _data, _this) {
+      function getVForTplData(element, attr, text, _data, _this) {
         // 防止死循环
         element.removeAttribute('v-for')
         let elArr = document.createDocumentFragment()
-        let str = JSON.stringify({element, attr, text, _data, _this}, null, 2)
+        let str = JSON.stringify({
+          element,
+          attr,
+          text,
+          _data,
+          _this
+        }, null, 2)
         if (/^\((.+), (.+)\) in (.+)$/.test(text)) {
           let [item, key, arr] = [RegExp.$1, RegExp.$2, RegExp.$3]
           log([item, key, arr], 'v-for');
@@ -107,73 +168,80 @@
             let __data = {}
             __data[item] = _arr[i];
             __data[key] = i;
-            // 递归调用
-            tplToHtml_item(el, Object.assign({}, _data, __data), _this)
-            // 组合成 NodeList
-            elArr.appendChild(el)
+            if (__data[item] !== void(0)) {
+              // 递归调用
+              tplToHtml_item(el, Object.assign({}, _data, __data), _this)
+              // 组合成 NodeList
+              elArr.appendChild(el)
+            } else {
+              err(_data, `Fn:getVForTplData::item:${item}>>key:${key}>>arr:${arr}>>i:${i}`)
+            }
           }
         }
         // v-for DOM 替换成 NodeList
         element.parentNode.replaceChild(elArr, element)
       }
       // 处理v-if指令
-      function getVIfTplData (element, attr, text, $data, _this) {
+      function getVIfTplData(element, attr, text, $data, _this) {
         // 防止死循环
         element.removeAttribute('v-if')
         let textContent = ''
         // 模板字符串
         let _text = text.replace(/([^{}]+)/g, '$data.$1')
         // textContent = eval.call($data, _text)
-        try {
-          textContent = eval(_text)
-        } catch (error) {
-          textContent = JSON.stringify($data, null, 2) + '--' + _text
-        }
+        // try {
+        //   textContent = eval(_text)
+        // } catch (error) {
+        //   textContent = JSON.stringify($data, null, 2) + '--' + _text
+        // }
+        textContent = evalFn(_text, $data, 'getVIfTplData')
         if (!textContent) {
           element.parentNode.removeChild(element)
         }
       }
       // 获取 {{name}} 等值
-      function getTextTplData (element, text, $data, _$1) {
+      function getTextTplData(element, text, $data, _$1) {
         let textContent = ''
         // 正则替换
         // textContent = _this.$data[RegExp.$1]
         let _text = text.replace(/\{\{([^{}]+)\}\}/g, '${$data.$1}')
         // 模板字符串
         // textContent = eval.call($data, '`'+ _text + '`')
-        log($data, '`'+ _text + '`');
-        try {
-          textContent = eval('`'+ _text + '`')
-        } catch (error) {
-          textContent = JSON.stringify($data, null, 2) + '--' + _text
-        }
+        log($data, '`' + _text + '`');
+        // try {
+        //   textContent = eval('`'+ _text + '`')
+        // } catch (error) {
+        //   textContent = JSON.stringify($data, null, 2) + '--' + _text
+        // }
+        textContent = evalFn('`' + _text + '`', $data, 'getTextTplData')
         element.textContent = textContent
       }
       // 获取 event 事件
-      function getEventTplData (element, eventType, text, _data, _this) {
+      function getEventTplData(element, eventType, text, _data, _this) {
         let methods = _this._methods
         let str = 'fn' + new Date().getTime()
         fnNames[str] = methods[text].bind(_this)
         // 绑定事件
         element.addEventListener(eventType, fnNames[str], false);
         // 记录 element 事件
-        pushClearEvents(element, eventType, fnNames[str])
+        pushClearEvents(element, eventType, str)
       }
       // 获取 attr 属性等值
-      function getAttrTplData (element, attr, text, $data, _this) {
+      function getAttrTplData(element, attr, text, $data, _this) {
         let textContent = ''
         // 模板字符串
         let _text = text.replace(/([^{}]+)/g, '$data.$1')
         // textContent = eval.call($data, _text)
-        try {
-          textContent = eval(_text)
-        } catch (error) {
-          textContent = JSON.stringify($data, null, 2) + '--' + _text
-        }
+        // try {
+        //   textContent = eval(_text)
+        // } catch (error) {
+        //   textContent = JSON.stringify($data, null, 2) + '--' + _text
+        // }
+        textContent = evalFn(_text, $data, 'getAttrTplData')
         element.setAttribute(attr, textContent)
       }
       // 数据渲染
-      function tplToHtml_arr (els, _data, _this) {
+      function tplToHtml_arr(els, _data, _this) {
         var reg = /\{\{([^{}]+)\}\}/g;
         for (let i = 0; i < els.length; i++) {
           const element = els[i];
@@ -189,7 +257,8 @@
           }
         }
       }
-      function tplToHtml_item (el, _data, _this) {
+
+      function tplToHtml_item(el, _data, _this) {
         var reg = /\{\{([^{}]+)\}\}/g;
         const element = el;
         var text = element.textContent;
@@ -205,7 +274,7 @@
       }
 
       if (!_this.$fragment) {
-        var fragment,child,els,_data;
+        var fragment, child, els, _data;
         fragment = document.createDocumentFragment()
         // 将原生节点拷贝到fragment
         while (child = el.firstChild) {
@@ -237,11 +306,17 @@
       let conEl = _this.$el
       conEl.innerHTML = ''
       conEl.appendChild(_this.$fragment);
-      return _this.$fragment;
-    },0);
+      // 最后重置 isStartQueue 状态 继续 执行队列
+      // setTimeout(() => {
+      //   // _this.$fragment = null
+      //   // 执行队列
+      //   isStartQueue = false
+      //   initQueue()
+      // })
+    }, 0);
   }
   // 构造函数
-  function Vm (options) {
+  function Vm(options) {
     this.$options = options || {
       data: {},
       methods: {}
