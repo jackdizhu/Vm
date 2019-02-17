@@ -1,4 +1,3 @@
-// 待解决问题 重新多次编译页面不能响应
 // 待解决问题 v-for DOM 节点替换后 原来子元素的编译还会继续进行 导致报错问题
 
 ; (function (global, factory) {
@@ -88,6 +87,15 @@
   function Compile(el, _this) {
     // 实际DOM移到虚拟DOM
     function node2Fragment(el, _this) {
+      function stringToBoolean(str) {
+        let bool = true
+        if (str.toLowerCase() === 'false') {
+          bool = false
+        } else {
+          bool = !!str
+        }
+        return bool
+      }
       // 实现 模板字符串功能 解决内存消耗太大问题
       function evalFn(text, $data, fnName) {
         // 删除 ` 字符串
@@ -120,6 +128,11 @@
         //   textContent = JSON.stringify($data, null, 2) + '--' + text
         // }
         textContent = replaceItem(text, $data)
+
+        // v-if Boolean 值处理
+        if (fnName === 'getVIfTplData') {
+          textContent = stringToBoolean(textContent)
+        }
 
         return textContent
       }
@@ -191,13 +204,14 @@
         element.removeAttribute('v-if')
         let textContent = ''
         // 模板字符串
-        let _text = text.replace(/([^{}]+)/g, '$data.$1')
+        let _text = text.replace(/([^{}]+)/g, '${$data.$1}')
         // textContent = eval.call($data, _text)
         // try {
         //   textContent = eval(_text)
         // } catch (error) {
         //   textContent = JSON.stringify($data, null, 2) + '--' + _text
         // }
+
         textContent = evalFn(_text, $data, 'getVIfTplData')
         if (!textContent) {
           element.parentNode.removeChild(element)
