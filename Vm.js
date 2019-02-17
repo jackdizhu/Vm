@@ -1,12 +1,10 @@
-// 已经处理 --  v-if DOM 中有 click 等事件 删除DOM时 没有清除事件
-// 已经处理 -- 循环修改属性 10000+ 次内存快速上升问题
+// 待解决问题 重新多次编译页面不能响应
 // 待解决问题 v-for DOM 节点替换后 原来子元素的编译还会继续进行 导致报错问题
-// 模板渲染使用了 eval 方法
-;
-(function (global, factory) {
+
+; (function (global, factory) {
   typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
     typeof define === 'function' && define.amd ? define(factory) :
-    (global = global || self, global.Vm = factory());
+      (global = global || self, global.Vm = factory());
 }(this, function () {
   'use strict';
   // 调试变量
@@ -52,14 +50,20 @@
   function initQueue() {
     // while 事件队列优化 改为 递归
     if (!isStartQueue && Queue.length) {
-      isStartQueue = true
+      let _time = new Date().getTime()
       let obj = Queue.shift()
-      obj.fn.apply(obj._this, obj.param)
-      // 最后重置 isStartQueue 状态
-      setTimeout(() => {
-        isStartQueue = false
-        initQueue()
-      }, 0)
+      // _QueueTime 时间内只执行一次 或者最后一次
+      if (_time - obj._this.__initQueueTime > obj._this._QueueTime || Queue.length === 0) {
+        isStartQueue = true
+        // 记录执行开始时间
+        obj._this.__initQueueTime = new Date().getTime()
+        obj.fn.apply(obj._this, obj.param)
+        // 最后重置 isStartQueue 状态
+        setTimeout(() => {
+          isStartQueue = false
+          initQueue()
+        }, 0)
+      }
     } else {
       log({
         Queue,
@@ -98,7 +102,7 @@
             for (let i = 1; i < arr.length; i++) {
               item = item[arr[i]];
               // 错误提示
-              if (item === void(0)) {
+              if (item === void (0)) {
                 err($data, `Fn:replaceItem::text:${text}>>str:${str}>>arr[i]:${arr[i]}`);
                 break;
               }
@@ -168,7 +172,7 @@
             let __data = {}
             __data[item] = _arr[i];
             __data[key] = i;
-            if (__data[item] !== void(0)) {
+            if (__data[item] !== void (0)) {
               // 递归调用
               tplToHtml_item(el, Object.assign({}, _data, __data), _this)
               // 组合成 NodeList
@@ -322,7 +326,10 @@
       methods: {}
     };
     var data = this._data = this.$options.data || {};
-    var _methods = this._methods = this.$options.methods || {};
+    this._methods = this.$options.methods || {};
+    // _QueueTime 时间内 渲染事件队列只执行一次
+    this._QueueTime = this.$options._QueueTime || 300;
+    this.__initQueueTime = 0
     var _this = this;
 
     // 数据劫持
