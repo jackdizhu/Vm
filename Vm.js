@@ -1,4 +1,5 @@
 // 待解决问题 v-for DOM 节点替换后 原来子元素的编译还会继续进行 导致报错问题
+// _QueueTime 时间内只执行一次 或者最后一次 (偶尔出现没有后面数据变更没有执行问题)
 
 ; (function (global, factory) {
   typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
